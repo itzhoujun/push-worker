@@ -88,6 +88,10 @@ class Worker
             if ($command == 'start' && posix_getpid() != $master_id) {
                 exit('push worker is already running!'.PHP_EOL);
             }
+        }else{
+            if($command != 'start'){
+                exit('push worker not run!'.PHP_EOL);
+            }
         }
         switch ($command) {
             case 'start':
@@ -97,19 +101,17 @@ class Worker
                     @unlink(self::$status_file);
                 }
                 posix_kill($master_id, SIGUSR2);
-                usleep(500000);
+                usleep(300000);
                 @readfile(self::$status_file);
                 exit(0);
             case 'stop':
                 //向主进程发出stop的信号
                 self::log('push worker['.$master_id.'] stopping....');
-                echo 'push worker['.$master_id.'] stopping....' . PHP_EOL;
                 $master_id && $flag = posix_kill($master_id, SIGINT);
                 while($master_id && posix_kill($master_id, 0)){
                     usleep(300000);
                 }
                 self::log('push worker['.$master_id.'] stop success');
-                echo 'push worker['.$master_id.'] stop success' . PHP_EOL;
                 exit(0);
                 break;
             default:
@@ -166,7 +168,6 @@ class Worker
             case SIGINT: // Stop.
                 self::stopAll();
                 break;
-            // Reload.
             case SIGUSR1:
                 break;
             case SIGUSR2: // Show status.
@@ -176,13 +177,19 @@ class Worker
     }
 
     protected static function writeStatus(){
-        if(self::$master_pid == posix_getpid()){
-            file_put_contents(self::$status_file,'==========master_status=========='.PHP_EOL,FILE_APPEND|LOCK_EX);
+        $pid = posix_getpid();
+        if(self::$master_pid == $pid){
+            $master_alive = self::$master_pid && posix_kill(self::$master_pid,0);
+            $master_alive = $master_alive?'is running':'die';
+            file_put_contents(self::$status_file,'master['.self::$master_pid.'] '.$master_alive.PHP_EOL,FILE_APPEND|LOCK_EX);
             foreach (self::$workers as $pid=>$worker_name){
                 posix_kill($pid, SIGUSR2);
             }
         }else{
-            file_put_contents(self::$status_file,'==========worker_status=========='.PHP_EOL,FILE_APPEND|LOCK_EX);
+            $name = self::$worker_name.' worker['.$pid.']';
+            $alive = $pid && posix_kill($pid,0);
+            $alive = $alive?'is running':'die';
+            file_put_contents(self::$status_file,$name.' '.$alive.PHP_EOL,FILE_APPEND|LOCK_EX);
         }
     }
 
@@ -252,9 +259,7 @@ class Worker
     protected static function setProcessTitle($title)
     {
         if (function_exists('cli_set_process_title')) {
-            if (!cli_set_process_title($title)) {
-                self::log('unable set process title');
-            }
+            @cli_set_process_title($title);
         }
     }
     
