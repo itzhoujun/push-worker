@@ -4,7 +4,6 @@ use Exception;
 use PushWorker\push\Push;
 
 require_once __DIR__ . '/Timer.php';
-require_once __DIR__ . '/Lock.php';
 require_once __DIR__ . 'push/Push.php';
 
 class Worker
@@ -29,6 +28,8 @@ class Worker
     public static $worker_name = '';
 
     public static $status = 0;
+
+    public static $executing = false;
 
     const STATUS_RUNNING = 1;
     const STATUS_SHUTDOWN = 2;
@@ -249,13 +250,15 @@ class Worker
     protected static function run(){
         Timer::init();
         Timer::add(5, function(){
-            if(Lock::trylock()){
+            if(!self::$executing){
+                self::$executing = true;
                 Push::init(self::$worker_name)
                     ->setConfig()
                     ->exec();
-                Lock::unlock();
+                self::$executing = false;
+            }else{
+                self::log('有任务正在执行,绕过');
             }
-
         });
         Timer::tick();
         while (1) {
