@@ -11,6 +11,8 @@ class Worker
 
     public static $log_file = '';
 
+    public static $status_file = '';
+
     public static $master_pid = 0;
 
     public static $stdoutFile = '/dev/null';
@@ -53,8 +55,12 @@ class Worker
     {
         $temp_dir = sys_get_temp_dir() . '/push_worker';
 
-        if (!is_dir($temp_dir)) {
-            @mkdir($temp_dir);
+        if (!is_dir($temp_dir) && !mkdir($temp_dir)) {
+            exit('mkdir runtime fail');
+        }
+
+        if (empty(self::$status_file)) {
+            self::$status_file = $temp_dir . '/status_file';
         }
 
         if (empty(self::$pid_file)) {
@@ -68,7 +74,6 @@ class Worker
 
     protected static function parseCommand()
     {
-
         global $argv;
 
         if (!isset($argv[1])) {
@@ -88,7 +93,12 @@ class Worker
             case 'start':
                 break;
             case 'status':
-
+                if(is_file(self::$status_file)){
+                    @unlink(self::$status_file);
+                }
+                posix_kill($master_id, SIGUSR2);
+                usleep(500000);
+                @readfile(self::$status_file);
                 exit(0);
             case 'stop':
                 //向主进程发出stop的信号
@@ -147,6 +157,7 @@ class Worker
     protected static function installSignal()
     {
         pcntl_signal(SIGINT, array('\\PushWorker\\Worker','signalHandler'),false);
+        pcntl_signal(SIGUSR2, array('\\PushWorker\\Worker','signalHandler'),false);
     }
 
     public static function signalHandler($signal)
@@ -158,9 +169,20 @@ class Worker
             // Reload.
             case SIGUSR1:
                 break;
-            // Show status.
-            case SIGUSR2:
+            case SIGUSR2: // Show status.
+                self::writeStatus();
                 break;
+        }
+    }
+
+    protected static function writeStatus(){
+        if(self::$master_pid == posix_getpid()){
+            file_put_contents(self::$status_file,'==========master_status=========='.PHP_EOL,FILE_APPEND|LOCK_EX);
+            foreach (self::$workers as $pid=>$worker_name){
+                posix_kill($pid, SIGUSR2);
+            }
+        }else{
+            file_put_contents(self::$status_file,'==========worker_status=========='.PHP_EOL,FILE_APPEND|LOCK_EX);
         }
     }
 
@@ -218,7 +240,7 @@ class Worker
     protected static function run(){
         Timer::init();
         Timer::add(5, function(){
-           self::log('timer test===='.self::$worker_name );
+           //self::log('timer test===='.self::$worker_name );
         });
         Timer::tick();
         while (1) {
