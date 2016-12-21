@@ -18,4 +18,4 @@ require_once __DIR__ . '/Worker.php';
 
 date_default_timezone_set('Asia/Shanghai');
 
-Worker::run();
+Worker::runAll();
