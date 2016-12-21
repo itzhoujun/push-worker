@@ -1,8 +1,11 @@
 <?php
 namespace PushWorker;
 use Exception;
+use PushWorker\push\Push;
 
 require_once __DIR__ . '/Timer.php';
+require_once __DIR__ . '/Lock.php';
+require_once __DIR__ . 'push/Push.php';
 
 class Worker
 {
@@ -26,7 +29,6 @@ class Worker
     public static $worker_name = '';
 
     public static $status = 0;
-
 
     const STATUS_RUNNING = 1;
     const STATUS_SHUTDOWN = 2;
@@ -247,7 +249,13 @@ class Worker
     protected static function run(){
         Timer::init();
         Timer::add(5, function(){
-           //self::log('timer test===='.self::$worker_name );
+            if(Lock::trylock()){
+                Push::init(self::$worker_name)
+                    ->setConfig()
+                    ->exec();
+                Lock::unlock();
+            }
+
         });
         Timer::tick();
         while (1) {
