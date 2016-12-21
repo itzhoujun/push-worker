@@ -1,6 +1,6 @@
 <?php
 
-//use Push\Worder;
+use PushWorker\Worker;
 
 if(strpos(strtolower(PHP_OS),'win') === 0){
   exit('not support window!');

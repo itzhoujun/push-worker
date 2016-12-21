@@ -1,6 +1,8 @@
 <?php
+namespace PushWorker;
+use Exception;
 
-//namespace Push;
+require_once __DIR__ . '/Timer.php';
 
 class Worker
 {
@@ -49,7 +51,6 @@ class Worker
 
     protected static function init()
     {
-
         $temp_dir = sys_get_temp_dir() . '/push_worker';
 
         if (!is_dir($temp_dir)) {
@@ -74,7 +75,7 @@ class Worker
             exit("Usage: php yourfile.php {start|stop|restart|reload|status}\n");
         }
         $command = $argv[1];
-        //check master is exist
+        //检测master进程是否存货
         $master_id = @file_get_contents(self::$pid_file);
         $master_is_alive = $master_id && posix_kill($master_id, 0);
 
@@ -95,7 +96,7 @@ class Worker
                 echo 'push worker['.$master_id.'] stopping....' . PHP_EOL;
                 $master_id && $flag = posix_kill($master_id, SIGINT);
                 while($master_id && posix_kill($master_id, 0)){
-                    usleep(500000);
+                    usleep(300000);
                 }
                 self::log('push worker['.$master_id.'] stop success');
                 echo 'push worker['.$master_id.'] stop success' . PHP_EOL;
@@ -145,7 +146,7 @@ class Worker
 
     protected static function installSignal()
     {
-        pcntl_signal(SIGINT, array('Worker','signalHandler'),false);
+        pcntl_signal(SIGINT, array('\\PushWorker\\Worker','signalHandler'),false);
     }
 
     public static function signalHandler($signal)
@@ -173,10 +174,7 @@ class Worker
             self::$worker_name = $worker_name;
             self::log($worker_name . ' push worker start');
             self::setProcessTitle('push worker: '.$worker_name);
-            while (1) {
-                pcntl_signal_dispatch();
-                sleep(1);
-            }
+            self::run();
         } else {
             throw new Exception('fork one worker fail');
         }
@@ -217,6 +215,18 @@ class Worker
 
     }
 
+    protected static function run(){
+        Timer::init();
+        Timer::add(5, function(){
+           self::log('timer test===='.self::$worker_name );
+        });
+        Timer::tick();
+        while (1) {
+            pcntl_signal_dispatch();
+            sleep(1);
+        }
+    }
+
     protected static function setProcessTitle($title)
     {
         if (function_exists('cli_set_process_title')) {
@@ -231,13 +241,13 @@ class Worker
         if(self::$master_pid == $pid){ //master
             self::$status = self::STATUS_SHUTDOWN;
             foreach (self::$workers as $pid=>$worker_name){
+                //停止worker进程
                 posix_kill($pid, SIGINT);
-                //TODO 使用定时器监控worker关闭情况，当worker全部关闭完成之后，关闭master进程
             }
+            //停止master进程
             @unlink(self::$pid_file);
             exit(0);
         }else{ //child
-            //TODO 查看当前是否有任务在执行，执行完毕后才退出
             self::log('push worker ' . self::$worker_name . ' pid: '.$pid.' stop');
             exit(0);
         }
