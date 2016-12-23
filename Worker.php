@@ -255,7 +255,7 @@ class Worker
                 PushMaster::executeIosPush();
             }elseif(self::$worker_name == 'jpush'){
                 PushMaster::executeJPush();
-            }elseif(self::$worker_name == 'jpush'){
+            }elseif(self::$worker_name == 'alipush'){
                 PushMaster::executeAliPush();
             }
         });
