@@ -1,10 +1,10 @@
 <?php
 namespace PushWorker;
-use Exception;
-use PushWorker\push\Push;
 
-require_once __DIR__ . '/Timer.php';
-require_once __DIR__ . 'push/Push.php';
+use Exception;
+use Illuminate\Database\Capsule\Manager as DB;
+use PushWorker\push\Utils\Push;
+use PushWorker\push\Utils\PushMaster;
 
 class Worker
 {
@@ -29,8 +29,6 @@ class Worker
 
     public static $status = 0;
 
-    public static $executing = false;
-
     const STATUS_RUNNING = 1;
     const STATUS_SHUTDOWN = 2;
 
@@ -42,8 +40,8 @@ class Worker
         self::daemonize();
         self::installSignal();
         self::saveMasterPid();
-        self::forkWorkers();
         self::resetStd();
+        self::forkWorkers();
         self::monitorWorkers();
     }
 
@@ -89,18 +87,18 @@ class Worker
 
         if ($master_is_alive) {
             if ($command == 'start' && posix_getpid() != $master_id) {
-                exit('push worker is already running!'.PHP_EOL);
+                exit('push worker is already running!' . PHP_EOL);
             }
-        }else{
-            if($command != 'start'){
-                exit('push worker not run!'.PHP_EOL);
+        } else {
+            if ($command != 'start') {
+                exit('push worker not run!' . PHP_EOL);
             }
         }
         switch ($command) {
             case 'start':
                 break;
             case 'status':
-                if(is_file(self::$status_file)){
+                if (is_file(self::$status_file)) {
                     @unlink(self::$status_file);
                 }
                 posix_kill($master_id, SIGUSR2);
@@ -109,12 +107,12 @@ class Worker
                 exit(0);
             case 'stop':
                 //向主进程发出stop的信号
-                self::log('push worker['.$master_id.'] stopping....');
+                self::log('push worker[' . $master_id . '] stopping....');
                 $master_id && $flag = posix_kill($master_id, SIGINT);
-                while($master_id && posix_kill($master_id, 0)){
+                while ($master_id && posix_kill($master_id, 0)) {
                     usleep(300000);
                 }
-                self::log('push worker['.$master_id.'] stop success');
+                self::log('push worker[' . $master_id . '] stop success');
                 exit(0);
                 break;
             default:
@@ -141,9 +139,10 @@ class Worker
         }
     }
 
-    protected static function saveMasterPid(){
+    protected static function saveMasterPid()
+    {
         self::$master_pid = posix_getpid();
-        if(false === @file_put_contents(self::$pid_file, self::$master_pid)){
+        if (false === @file_put_contents(self::$pid_file, self::$master_pid)) {
             throw new Exception('fail to save master pid: ' . self::$master_pid);
         }
     }
@@ -161,8 +160,8 @@ class Worker
 
     protected static function installSignal()
     {
-        pcntl_signal(SIGINT, array('\\PushWorker\\Worker','signalHandler'),false);
-        pcntl_signal(SIGUSR2, array('\\PushWorker\\Worker','signalHandler'),false);
+        pcntl_signal(SIGINT, array('\\PushWorker\\Worker', 'signalHandler'), false);
+        pcntl_signal(SIGUSR2, array('\\PushWorker\\Worker', 'signalHandler'), false);
     }
 
     public static function signalHandler($signal)
@@ -179,20 +178,21 @@ class Worker
         }
     }
 
-    protected static function writeStatus(){
+    protected static function writeStatus()
+    {
         $pid = posix_getpid();
-        if(self::$master_pid == $pid){
-            $master_alive = self::$master_pid && posix_kill(self::$master_pid,0);
-            $master_alive = $master_alive?'is running':'die';
-            file_put_contents(self::$status_file,'master['.self::$master_pid.'] '.$master_alive.PHP_EOL,FILE_APPEND|LOCK_EX);
-            foreach (self::$workers as $pid=>$worker_name){
+        if (self::$master_pid == $pid) {
+            $master_alive = self::$master_pid && posix_kill(self::$master_pid, 0);
+            $master_alive = $master_alive ? 'is running' : 'die';
+            file_put_contents(self::$status_file, 'master[' . self::$master_pid . '] ' . $master_alive . PHP_EOL, FILE_APPEND | LOCK_EX);
+            foreach (self::$workers as $pid => $worker_name) {
                 posix_kill($pid, SIGUSR2);
             }
-        }else{
-            $name = self::$worker_name.' worker['.$pid.']';
-            $alive = $pid && posix_kill($pid,0);
-            $alive = $alive?'is running':'die';
-            file_put_contents(self::$status_file,$name.' '.$alive.PHP_EOL,FILE_APPEND|LOCK_EX);
+        } else {
+            $name = self::$worker_name . ' worker[' . $pid . ']';
+            $alive = $pid && posix_kill($pid, 0);
+            $alive = $alive ? 'is running' : 'die';
+            file_put_contents(self::$status_file, $name . ' ' . $alive . PHP_EOL, FILE_APPEND | LOCK_EX);
         }
     }
 
@@ -205,7 +205,7 @@ class Worker
         } elseif ($pid == 0) {
             self::$worker_name = $worker_name;
             self::log($worker_name . ' push worker start');
-            self::setProcessTitle('push worker: '.$worker_name);
+            self::setProcessTitle('push worker: ' . $worker_name);
             self::run();
         } else {
             throw new Exception('fork one worker fail');
@@ -237,7 +237,7 @@ class Worker
             pcntl_signal_dispatch();
             //child exit
             if ($pid > 0) {
-                if(self::$status != self::STATUS_SHUTDOWN){
+                if (self::$status != self::STATUS_SHUTDOWN) {
                     $worker_name = self::$workers[$pid];
                     unset(self::$workers[$pid]);
                     self::forkOneWorker($worker_name);
@@ -247,17 +247,16 @@ class Worker
 
     }
 
-    protected static function run(){
+    protected static function run()
+    {
         Timer::init();
-        Timer::add(5, function(){
-            if(!self::$executing){
-                self::$executing = true;
-                Push::init(self::$worker_name)
-                    ->setConfig()
-                    ->exec();
-                self::$executing = false;
-            }else{
-                self::log('有任务正在执行,绕过');
+        Timer::add(5, function () {
+            if(self::$worker_name == 'ios'){
+                PushMaster::executeIosPush();
+            }elseif(self::$worker_name == 'jpush'){
+                PushMaster::executeJPush();
+            }elseif(self::$worker_name == 'jpush'){
+                PushMaster::executeAliPush();
             }
         });
         Timer::tick();
@@ -273,20 +272,21 @@ class Worker
             @cli_set_process_title($title);
         }
     }
-    
-    protected static function stopAll(){
+
+    protected static function stopAll()
+    {
         $pid = posix_getpid();
-        if(self::$master_pid == $pid){ //master
+        if (self::$master_pid == $pid) { //master
             self::$status = self::STATUS_SHUTDOWN;
-            foreach (self::$workers as $pid=>$worker_name){
+            foreach (self::$workers as $pid => $worker_name) {
                 //停止worker进程
                 posix_kill($pid, SIGINT);
             }
             //停止master进程
             @unlink(self::$pid_file);
             exit(0);
-        }else{ //child
-            self::log('push worker ' . self::$worker_name . ' pid: '.$pid.' stop');
+        } else { //child
+            self::log('push worker ' . self::$worker_name . ' pid: ' . $pid . ' stop');
             exit(0);
         }
     }
